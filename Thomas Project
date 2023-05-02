@@ -1,0 +1,612 @@
+//
+// Created by thoma on 19/04/2023.
+//
+
+#include "NFA.h"
+
+NFA::NFA(){}
+
+NFA::NFA(string jsonInput) {
+    ifstream input(jsonInput);
+
+    json j;
+    input >> j;
+
+    for(int i = 0; i < j["states"].size(); i++){
+        State state;
+        state.name = j["states"][i]["name"];
+        state.isStarting = j["states"][i]["starting"];
+        state.isAccepting = j["states"][i]["accepting"];
+        states.push_back(state);
+    }
+    for(int i = 0; i < j["alphabet"].size(); i++){
+        alphabet.push_back(j["alphabet"][i]);
+    }
+    for(int i = 0; i < j["transitions"].size(); i++){
+        for(int k = 0; k < states.size(); k++){
+            if(states[k].name == j["transitions"][i]["from"]){
+                states[k].transitions.emplace_back(make_pair(j["transitions"][i]["input"], j["transitions"][i]["to"]));
+            }
+        }
+    }
+
+    for(int i = 0; i < states.size(); i++){
+        if(states[i].isStarting){
+            currentStates.push_back(states[i]);
+        }
+    }
+}
+
+bool NFA::accepts(string input) {
+    vector<string> newStates;
+    vector<string> deleteStates;
+    vector<string> empty;
+    for(int i = 0; i < input.size(); i++) {
+        deleteStates = empty;
+        newStates = empty;
+        for (int l = 0; l < currentStates.size(); l++) {
+            bool deleteState = true;
+            for (int j = 0; j < currentStates[l].transitions.size(); j++) {
+                string s(1, input[i]);
+                if (currentStates[l].transitions[j].first == s) {
+                    newStates.push_back(currentStates[l].transitions[j].second);
+                    deleteState = false;
+                }
+            }
+            if(deleteState){
+                deleteStates.push_back(currentStates[l].name);
+            }
+            for (int k = 0; k < states.size(); k++) {
+                for(int m = 0; m < newStates.size(); m++) {
+                    if (states[k].name == newStates[m]) {
+                        currentStates.push_back(states[k]);
+                    }
+                }
+            }
+            for(int k = 0; k < deleteStates.size(); k++){
+                for(int m = 0; m < currentStates.size(); m++) {
+                    if(deleteStates[k] == currentStates[m].name){
+                        currentStates.erase(currentStates.begin() + m);
+                    }
+                }
+            }
+        }
+    }
+    for(int i = 0; i < currentStates.size(); i++){
+        if(currentStates[i].isAccepting){
+            return true;
+        }
+    }
+    return false;
+}
+
+void NFA::print() {
+    json j;
+    j["type"] = "NFA";
+    j["alphabet"] = alphabet;
+    int transitions = 0;
+    for(int i = 0; i < states.size(); i++){
+        j["states"][i]["name"] = states[i].name;
+        j["states"][i]["starting"] = states[i].isStarting;
+        j["states"][i]["accepting"] = states[i].isAccepting;
+        for(int k = 0; k < states[i].transitions.size(); k++){
+            j["transitions"][transitions]["from"] = states[i].name;
+            j["transitions"][transitions]["to"] = states[i].transitions[k].second;
+            j["transitions"][transitions]["input"] = states[i].transitions[k].first;
+            transitions++;
+        }
+    }
+    cout << setw(4) << j << endl;
+}
+
+vector<vector<State>> NFA::createPowerSet(vector<State> v) {
+    int pow_set_size = pow(2, v.size());
+    int counter, j;
+
+    vector<vector<State>> allStates;
+    for (counter = 0; counter < pow_set_size; counter++) {
+        vector<State> States;
+        for (j = 0; j < v.size(); j++) {
+            if (counter & (1 << j))
+                States.push_back(v[j]);
+        }
+        allStates.push_back(States);
+    }
+    return allStates;
+}
+
+DFA NFA::toDFA() {
+    // create new states
+    int currentNewState = 0;
+    bool loop = true;
+    vector<vector<State>> newStates;
+    newStates.push_back(currentStates);
+    vector<State> current = currentStates;
+    vector<string> transitions;
+    transitions.push_back(currentStates[0].name);
+    vector<vector<string>> transitionsVector;
+    transitionsVector.push_back({currentStates[0].name});
+    while(loop) {
+        currentNewState++;
+        vector<string> transition;
+        vector<vector<string>> transitionVector;
+        vector<string> strings;
+        map<string,string> m;
+        for (int j = 0; j < alphabet.size(); j++) {
+            for (int i = 0; i < current.size(); i++) {
+                for (int k = 0; k < current[i].transitions.size(); k++) {
+                    if (current[i].transitions[k].first == alphabet[j]) {
+                        transition.push_back(current[i].transitions[k].second);
+                    }
+                }
+            }
+            // sort and remove dublicates from transition
+            sort(transition.begin(), transition.end());
+            transition.erase(unique(transition.begin(), transition.end()), transition.end());
+            string t;
+            vector<string> stringVector;
+            stringVector.clear();
+            for(int k = 0; k < transition.size(); k++){
+                t += transition[k];
+                stringVector.push_back(transition[k]);
+            }
+            transition.clear();
+            strings.push_back(t);
+            transitionVector.push_back(stringVector);
+        }
+        for(int i = 0; i < strings.size(); i++) {
+            if (count(transitions.begin(), transitions.end(), strings[i])) {
+                if(alphabet.size() == 1){
+                    loop = false;
+                }
+            }
+            else {
+                transitions.push_back(strings[i]);
+                transitionsVector.push_back(transitionVector[i]);
+            }
+        }
+        strings.clear();
+        vector<State> newState;
+        if(loop) {
+            for (int j = 0; j < states.size(); j++) {
+                for (int i = 0; i < transitionsVector[currentNewState].size(); i++) {
+                    if (transitionsVector[currentNewState][i] == states[j].name) {
+                        newState.push_back(states[j]);
+                    }
+                }
+            }
+        }
+        current = newState;
+        newStates.push_back(newState);
+
+        // check to end loop
+        if(alphabet.size() != 1) {
+            if (transitions.size() == newStates.size()) {
+                loop = false;
+            }
+        }
+    }
+    // create new DFA
+    DFA dfa;
+    dfa.alphabet = alphabet;
+    State state;
+    map<string,vector<string>> stateTransitions;
+
+    // states
+    if(alphabet.size() == 1){
+        newStates.pop_back();
+    }
+    for(int i = 0; i < newStates.size(); i++){
+
+        // create name for new state
+        string name = "{";
+        bool isStarting = false;
+        bool isAccepting = false;
+        int counter = 0;
+        for(int j = 0; j < newStates[i].size(); j++){
+            name += newStates[i][j].name + ",";
+            if(newStates[i][j].isStarting){
+                counter++;
+                if(counter == newStates[i].size()){
+                    isStarting = true;
+                }
+            }
+            if(newStates[i][j].isAccepting){
+                isAccepting = true;
+            }
+        }
+
+        // create stateTransitions
+        for(int j = 0; j < alphabet.size(); j++){
+            for(int k = 0; k < newStates[i].size(); k++){
+                for(int l = 0; l < newStates[i][k].transitions.size(); l++){
+                    if(newStates[i][k].transitions[l].first == alphabet[j]){
+                        stateTransitions[alphabet[j]].push_back(newStates[i][k].transitions[l].second);
+                    }
+                }
+            }
+        }
+        state.transitions.clear();
+        for(int j = 0; j < alphabet.size(); j++){
+
+            // sort and remove dublicates from stateTransition
+            sort(stateTransitions[alphabet[j]].begin(), stateTransitions[alphabet[j]].end());
+            stateTransitions[alphabet[j]].erase(unique(stateTransitions[alphabet[j]].begin(),
+            stateTransitions[alphabet[j]].end()), stateTransitions[alphabet[j]].end());
+
+            // add transitions to state
+            string s = "{";
+            for(int k = 0; k < stateTransitions[alphabet[j]].size(); k++){
+                s += stateTransitions[alphabet[j]][k];
+                s += ",";
+            }
+            string ss = s.substr(0, s.size()-1);
+            ss += "}";
+            state.transitions.emplace_back(alphabet[j], ss);
+        }
+        stateTransitions.clear();
+        string newName = name.substr(0, name.size()-1);
+        newName += "}";
+        state.name = newName;
+        state.isStarting = isStarting;
+        state.isAccepting = isAccepting;
+        if(state.name != "}") {
+            dfa.states.push_back(state);
+        }
+    }
+
+    return dfa;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//
+// Created by thoma on 19/04/2023.
+//
+
+#ifndef TALENENAUTOMATEN_NFA_H
+#define TALENENAUTOMATEN_NFA_H
+#include <vector>
+#include <iostream>
+#include <fstream>
+#include <iomanip>
+#include <string>
+#include <cmath>
+#include <map>
+#include <set>
+#include "json.hpp"
+#include "DFA.h"
+
+using namespace std;
+
+using json = nlohmann::json;
+
+class NFA {
+    vector<State> states;
+    vector<State> currentStates;
+    vector<string> alphabet;
+public:
+    NFA();
+
+    NFA(string jsonInput);
+
+    bool accepts(string input);
+
+    void print();
+
+    vector<vector<State>> createPowerSet(vector<State> v);
+
+    DFA toDFA();
+};
+
+
+#endif //TALENENAUTOMATEN_NFA_H
+
+//
+// Created by thoma on 4/03/2023.
+//
+
+#include "DFA.h"
+
+
+DFA::DFA() {
+    //State state;
+    //state.name = "S0";
+    //state.transitions = {make_pair("0", "S0"), make_pair("1", "S1")};
+    //state.isStarting = true;
+    //state.isAccepting = true;
+    //states.push_back(state);
+    //currentState = state;
+    //state.name = "S1";
+    //state.transitions = {make_pair("0", "S2"), make_pair("1", "S0")};
+    //state.isStarting = false;
+    //state.isAccepting = false;
+    //states.push_back(state);
+    //state.name = "S2";
+    //state.transitions = {make_pair("0", "S1"), make_pair("1", "S2")};
+    //state.isStarting = false;
+    //state.isAccepting = false;
+    //states.push_back(state);
+    //alphabet = {"0", "1"};
+}
+
+DFA::DFA(std::string jsonInput) {
+    ifstream input(jsonInput);
+
+    json j;
+    input >> j;
+
+    for(int i = 0; i < j["states"].size(); i++){
+        State state;
+        state.name = j["states"][i]["name"];
+        state.isStarting = j["states"][i]["starting"];
+        state.isAccepting = j["states"][i]["accepting"];
+        states.push_back(state);
+    }
+    for(int i = 0; i < j["alphabet"].size(); i++){
+        alphabet.push_back(j["alphabet"][i]);
+    }
+    for(int i = 0; i < j["transitions"].size(); i++){
+        for(int k = 0; k < states.size(); k++){
+            if(states[k].name == j["transitions"][i]["from"]){
+                states[k].transitions.emplace_back(make_pair(j["transitions"][i]["input"], j["transitions"][i]["to"]));
+            }
+        }
+    }
+
+    for(int i = 0; i < states.size(); i++){
+        if(states[i].isStarting){
+            currentState = states[i];
+        }
+    }
+}
+
+bool DFA::accepts(string input) {
+    string newState;
+    for(int i = 0; i < input.size(); i++){
+        for(int j = 0; j < currentState.transitions.size(); j++){
+            string s(1, input[i]);
+            if(currentState.transitions[j].first == s){
+                newState = currentState.transitions[j].second;
+            }
+        }
+        for(int k = 0; k < states.size(); k++){
+            if(states[k].name == newState){
+                currentState = states[k];
+            }
+        }
+    }
+    return currentState.isAccepting;
+}
+
+void DFA::print() {
+    json j;
+    j["type"] = "DFA";
+    j["alphabet"] = alphabet;
+    int transitions = 0;
+    for(int i = 0; i < states.size(); i++){
+        j["states"][i]["name"] = states[i].name;
+        j["states"][i]["starting"] = states[i].isStarting;
+        j["states"][i]["accepting"] = states[i].isAccepting;
+        for(int k = 0; k < states[i].transitions.size(); k++){
+            j["transitions"][transitions]["from"] = states[i].name;
+            j["transitions"][transitions]["to"] = states[i].transitions[k].second;
+            j["transitions"][transitions]["input"] = states[i].transitions[k].first;
+            transitions++;
+        }
+    }
+    cout << setw(4) << j << endl;
+}
+
+DFA::DFA(DFA dfa1, DFA dfa2, bool intersection) {
+    // new states
+    vector<string> newStates;
+    newStates.push_back(dfa1.currentState.name);
+    newStates[0] += dfa2.currentState.name;
+
+    vector<State> currentStates;
+    currentStates.push_back(dfa1.currentState);
+    currentStates.push_back(dfa2.currentState);
+
+    vector<vector<State>> allStates;
+    allStates.push_back(currentStates);
+
+    int newStatesCounter = 0;
+    bool loop = true;
+    while(loop){
+        newStatesCounter++;
+        for(int i = 0; i < dfa1.alphabet.size(); i++) {
+            string newState;
+            for (int j = 0; j < currentStates.size(); j++) {
+                for (int k = 0; k < currentStates[j].transitions.size(); k++) {
+                    if (currentStates[j].transitions[k].first == dfa1.alphabet[i]) {
+                        newState += currentStates[j].transitions[k].second;
+                    }
+                }
+            }
+            if (count(newStates.begin(), newStates.end(), newState)) {
+                if (dfa1.alphabet.size() == 1) {
+                    loop = false;
+                }
+            } else {
+                newStates.push_back(newState);
+            }
+        }
+        vector<State> state;
+        state.clear();
+        if(loop) {
+            for (int j = 0; j < dfa1.states.size(); j++) {
+                if (newStates[newStatesCounter][0] == dfa1.states[j].name[0]) {
+                    state.push_back(dfa1.states[j]);
+                }
+            }
+            for (int j = 0; j < dfa2.states.size(); j++) {
+                if (newStates[newStatesCounter][1] == dfa2.states[j].name[0]) {
+                    state.push_back(dfa2.states[j]);
+                }
+            }
+            currentStates = state;
+            allStates.push_back(state);
+        }
+        if(dfa1.alphabet.size() != 1){
+            if(allStates.size() == newStates.size()){
+                loop = false;
+            }
+        }
+    }
+
+    // create new DFA
+    State state;
+    map<string,vector<string>> stateTransitions;
+    alphabet = dfa1.alphabet;
+
+    for(int i = 0; i < allStates.size(); i++){
+
+        // create name for new state
+        string name = "(";
+        bool isStarting = false;
+        bool isAccepting = false;
+        int counter1 = 0;
+        int counter2 = 0;
+        for(int j = 0; j < allStates[i].size(); j++){
+            name += allStates[i][j].name + ",";
+            if(allStates[i][j].isStarting){
+                counter1++;
+                if(counter1 == allStates[i].size()){
+                    isStarting = true;
+                }
+            }
+            // intersection
+            if(intersection) {
+                if (allStates[i][j].isAccepting) {
+                    counter2++;
+                    if (counter2 == allStates[i].size()) {
+                        isAccepting = true;
+                    }
+                }
+            }
+            // union
+            else{
+                if (allStates[i][j].isAccepting) {
+                    isAccepting = true;
+                }
+            }
+        }
+
+        // create stateTransitions
+        for(int j = 0; j < alphabet.size(); j++){
+            for(int k = 0; k < allStates[i].size(); k++){
+                for(int l = 0; l < allStates[i][k].transitions.size(); l++){
+                    if(allStates[i][k].transitions[l].first == alphabet[j]){
+                        stateTransitions[alphabet[j]].push_back(allStates[i][k].transitions[l].second);
+                    }
+                }
+            }
+        }
+        state.transitions.clear();
+        for(int j = 0; j < alphabet.size(); j++){
+            // add transitions to state
+            string s = "(";
+            for(int k = 0; k < stateTransitions[alphabet[j]].size(); k++){
+                s += stateTransitions[alphabet[j]][k];
+                s += ",";
+            }
+            string ss = s.substr(0, s.size()-1);
+            ss += ")";
+            state.transitions.emplace_back(alphabet[j], ss);
+        }
+        stateTransitions.clear();
+        string newName = name.substr(0, name.size()-1);
+        newName += ")";
+        state.name = newName;
+        state.isStarting = isStarting;
+        state.isAccepting = isAccepting;
+        if(state.name != ")") {
+            states.push_back(state);
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//
+// Created by thoma on 4/03/2023.
+//
+
+#ifndef TALENENAUTOMATEN_DFA_H
+#define TALENENAUTOMATEN_DFA_H
+#include <vector>
+#include <iostream>
+#include <fstream>
+#include <iomanip>
+#include "json.hpp"
+
+using namespace std;
+
+using json = nlohmann::json;
+
+struct State{
+    string name;
+    vector<pair<string, string>> transitions;
+    bool isStarting;
+    bool isAccepting;
+};
+
+class DFA {
+public:
+    vector<State> states;
+    State currentState;
+    vector<string> alphabet;
+
+    DFA();
+
+    DFA(string j);
+
+    bool accepts(string input);
+
+    void print();
+
+    DFA(DFA dfa1, DFA dfa2, bool intersection);
+};
+
+
+#endif //TALENENAUTOMATEN_DFA_H
